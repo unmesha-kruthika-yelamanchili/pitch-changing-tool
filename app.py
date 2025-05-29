@@ -1,7 +1,7 @@
 import os
+import sys
 import streamlit as st
 from pydub import AudioSegment
-import librosa.effects
 import numpy as np
 import io
 import plotly.graph_objects as go
@@ -9,27 +9,41 @@ import time
 import tempfile
 import subprocess
 
-# ================== FFMPEG FIX ================== #
-# Set explicit FFmpeg paths for Streamlit Cloud
+# ================== PYTHON VERSION CHECK ================== #
+if sys.version_info >= (3, 13):
+    st.error("""
+    ❌ Unsupported Python Version Detected (3.13+)
+    
+    This application requires Python 3.10 for compatibility with audio processing libraries.
+    
+    Please redeploy with Python 3.10 by adding a `runtime.txt` file containing:
+    ```
+    python-3.10
+    ```
+    """)
+    st.stop()
+# ================== END VERSION CHECK ================== #
+
+# ================== FFMPEG CONFIGURATION ================== #
 FFMPEG_PATH = "/usr/bin/ffmpeg"
 FFPROBE_PATH = "/usr/bin/ffprobe"
 
-# Configure environment variables
+# Configure environment
 os.environ["PATH"] += os.pathsep + os.path.dirname(FFMPEG_PATH)
 os.environ["FFMPEG_PATH"] = FFMPEG_PATH
 os.environ["FFPROBE_PATH"] = FFPROBE_PATH
 
-# Configure Pydub explicitly
+# Configure Pydub
 AudioSegment.converter = FFMPEG_PATH
 AudioSegment.ffprobe = FFPROBE_PATH
 
 # Verify FFmpeg installation
 try:
-    subprocess.run([FFMPEG_PATH, "-version"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    subprocess.run([FFPROBE_PATH, "-version"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    ffmpeg_check = subprocess.run([FFMPEG_PATH, "-version"], 
+                                 capture_output=True, text=True, check=True)
 except Exception as e:
     st.error(f"❌ FFmpeg verification failed: {str(e)}")
-# ================== END FFMPEG FIX ================== #
+# ================== END FFMPEG CONFIG ================== #
 
 # Custom CSS styling with animations
 st.markdown("""
@@ -177,7 +191,7 @@ with st.container():
                     st.session_state.semitones = value
                     st.rerun()
 
-# Processing function
+# Processing function with librosa
 def process_audio(input_file, semitones):
     try:
         # Create temp file with proper extension
@@ -189,7 +203,7 @@ def process_audio(input_file, semitones):
             tmp_file.write(input_file.getbuffer())
             tmp_path = tmp_file.name
         
-        # Load audio with explicit codec
+        # Load audio
         audio = AudioSegment.from_file(tmp_path, format=file_ext)
         audio = audio.set_sample_width(2).set_frame_rate(44100)
         
@@ -221,7 +235,9 @@ def process_audio(input_file, semitones):
         )
         viz_placeholder.plotly_chart(fig, use_container_width=True)
         
-        # Processing
+        # Processing - using librosa
+        import librosa.effects
+        
         def process_channel(channel_data):
             return librosa.effects.pitch_shift(
                 channel_data.astype(np.float32) / 32768.0,
@@ -253,7 +269,7 @@ def process_audio(input_file, semitones):
         return None
     finally:
         # Clean up temp file
-        if os.path.exists(tmp_path):
+        if 'tmp_path' in locals() and os.path.exists(tmp_path):
             os.remove(tmp_path)
 
 # Process button
