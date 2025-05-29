@@ -9,20 +9,17 @@ import time
 import tempfile
 import subprocess
 
-# ================== PYTHON VERSION CHECK ================== #
-if sys.version_info >= (3, 13):
-    st.error("""
-    ❌ Unsupported Python Version Detected (3.13+)
-    
-    This application requires Python 3.10 for compatibility with audio processing libraries.
-    
-    Please redeploy with Python 3.10 by adding a `runtime.txt` file containing:
-    ```
-    python-3.10
-    ```
-    """)
+# ================== DEPENDENCY VERIFICATION ================== #
+try:
+    import librosa
+    import librosa.effects
+    LIBROSA_LOADED = True
+except ImportError as e:
+    st.error(f"❌ Critical dependency missing: {str(e)}")
+    st.error("Please check the build logs for installation errors")
+    LIBROSA_LOADED = False
     st.stop()
-# ================== END VERSION CHECK ================== #
+# ================== END DEPENDENCY CHECK ================== #
 
 # ================== FFMPEG CONFIGURATION ================== #
 FFMPEG_PATH = "/usr/bin/ffmpeg"
@@ -39,10 +36,18 @@ AudioSegment.ffprobe = FFPROBE_PATH
 
 # Verify FFmpeg installation
 try:
-    ffmpeg_check = subprocess.run([FFMPEG_PATH, "-version"], 
-                                 capture_output=True, text=True, check=True)
+    ffmpeg_check = subprocess.run(
+        [FFMPEG_PATH, "-version"], 
+        capture_output=True, 
+        text=True, 
+        check=True
+    )
+    st.session_state.ffmpeg_version = ffmpeg_check.stdout.split('\n')[0]
 except Exception as e:
     st.error(f"❌ FFmpeg verification failed: {str(e)}")
+    st.session_state.ffmpeg_available = False
+else:
+    st.session_state.ffmpeg_available = True
 # ================== END FFMPEG CONFIG ================== #
 
 # Custom CSS styling with animations
@@ -148,6 +153,13 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
+# System info panel
+with st.expander("ℹ️ System Information", expanded=True):
+    if 'ffmpeg_available' in st.session_state:
+        st.write(f"FFmpeg version: {st.session_state.ffmpeg_version}")
+    st.write(f"Python version: {sys.version}")
+    st.write(f"Librosa version: {librosa.__version__}")
+
 # File upload section
 with st.expander("🎧 UPLOAD AUDIO", expanded=True):
     uploaded_file = st.file_uploader(" ", type=["mp3", "wav", "ogg", "m4a"],
@@ -191,7 +203,7 @@ with st.container():
                     st.session_state.semitones = value
                     st.rerun()
 
-# Processing function with librosa
+# Processing function
 def process_audio(input_file, semitones):
     try:
         # Create temp file with proper extension
@@ -235,9 +247,7 @@ def process_audio(input_file, semitones):
         )
         viz_placeholder.plotly_chart(fig, use_container_width=True)
         
-        # Processing - using librosa
-        import librosa.effects
-        
+        # Processing
         def process_channel(channel_data):
             return librosa.effects.pitch_shift(
                 channel_data.astype(np.float32) / 32768.0,
@@ -270,10 +280,17 @@ def process_audio(input_file, semitones):
     finally:
         # Clean up temp file
         if 'tmp_path' in locals() and os.path.exists(tmp_path):
-            os.remove(tmp_path)
+            try:
+                os.remove(tmp_path)
+            except:
+                pass
 
 # Process button
 if uploaded_file and st.button("🚀 PROCESS AUDIO", use_container_width=True, type="primary"):
+    if not st.session_state.get('ffmpeg_available', False):
+        st.error("FFmpeg not available - audio processing disabled")
+        st.stop()
+    
     with st.spinner(""):
         start_time = time.time()
         loading_placeholder = st.empty()
