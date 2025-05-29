@@ -9,17 +9,25 @@ import time
 import tempfile
 import subprocess
 
-# ================== DEPENDENCY VERIFICATION ================== #
-try:
-    import librosa
-    import librosa.effects
-    LIBROSA_LOADED = True
-except ImportError as e:
-    st.error(f"❌ Critical dependency missing: {str(e)}")
-    st.error("Please check the build logs for installation errors")
-    LIBROSA_LOADED = False
-    st.stop()
-# ================== END DEPENDENCY CHECK ================== #
+# ================== PYTHON VERSION ENFORCEMENT ================== #
+def verify_python_version():
+    """Ensure we're running on Python 3.10"""
+    if sys.version_info < (3, 10) or sys.version_info >= (3, 12):
+        st.error(f"""
+        ❌ Unsupported Python Version: {sys.version}
+        
+        This application requires Python 3.10 or 3.11 for compatibility.
+        
+        Detected version: {sys.version}
+        
+        Please add a `runtime.txt` file to your repository with:
+        ```
+        python-3.10
+        ```
+        """)
+        st.stop()
+
+verify_python_version()
 
 # ================== FFMPEG CONFIGURATION ================== #
 FFMPEG_PATH = "/usr/bin/ffmpeg"
@@ -42,13 +50,24 @@ try:
         text=True, 
         check=True
     )
-    st.session_state.ffmpeg_version = ffmpeg_check.stdout.split('\n')[0]
+    ffmpeg_version = ffmpeg_check.stdout.split('\n')[0]
 except Exception as e:
     st.error(f"❌ FFmpeg verification failed: {str(e)}")
     st.session_state.ffmpeg_available = False
 else:
     st.session_state.ffmpeg_available = True
-# ================== END FFMPEG CONFIG ================== #
+    st.session_state.ffmpeg_version = ffmpeg_version
+
+# ================== LIBROSA IMPORT ================== #
+try:
+    import librosa
+    import librosa.effects
+    LIBROSA_LOADED = True
+except ImportError as e:
+    st.error(f"❌ Critical dependency missing: {str(e)}")
+    st.error("Please check the build logs for installation errors")
+    LIBROSA_LOADED = False
+    st.stop()
 
 # Custom CSS styling with animations
 st.markdown("""
@@ -142,6 +161,12 @@ if 'processed_audio' not in st.session_state:
 if 'semitones' not in st.session_state:
     st.session_state.semitones = 0
 
+# System info panel
+st.write(f"Python version: {sys.version}")
+if 'ffmpeg_version' in st.session_state:
+    st.write(f"FFmpeg version: {st.session_state.ffmpeg_version}")
+st.write(f"Librosa version: {librosa.__version__}")
+
 # Page header
 st.markdown("""
     <div style="text-align: center; margin-bottom: 3rem;">
@@ -152,13 +177,6 @@ st.markdown("""
         <div class="floating" style="font-size: 2rem;">🎛️</div>
     </div>
 """, unsafe_allow_html=True)
-
-# System info panel
-with st.expander("ℹ️ System Information", expanded=True):
-    if 'ffmpeg_available' in st.session_state:
-        st.write(f"FFmpeg version: {st.session_state.ffmpeg_version}")
-    st.write(f"Python version: {sys.version}")
-    st.write(f"Librosa version: {librosa.__version__}")
 
 # File upload section
 with st.expander("🎧 UPLOAD AUDIO", expanded=True):
