@@ -1,7 +1,11 @@
 streamlit
 pydub
 librosa==0.10.1
-numpy
+numpy==1.23.5
 plotly
 soundfile
 ffmpeg-python
+setuptools
+numba==0.56.4
+llvmlite==0.39.1
+audioread
