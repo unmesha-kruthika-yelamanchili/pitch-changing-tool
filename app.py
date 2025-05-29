@@ -6,11 +6,30 @@ import numpy as np
 import io
 import plotly.graph_objects as go
 import time
+import tempfile
+import subprocess
 
-# Set FFmpeg paths explicitly for Streamlit Cloud
-if os.path.exists('/usr/bin/ffmpeg'):
-    AudioSegment.converter = "/usr/bin/ffmpeg"
-    AudioSegment.ffprobe   = "/usr/bin/ffprobe"
+# ================== FFMPEG FIX ================== #
+# Set explicit FFmpeg paths for Streamlit Cloud
+FFMPEG_PATH = "/usr/bin/ffmpeg"
+FFPROBE_PATH = "/usr/bin/ffprobe"
+
+# Configure environment variables
+os.environ["PATH"] += os.pathsep + os.path.dirname(FFMPEG_PATH)
+os.environ["FFMPEG_PATH"] = FFMPEG_PATH
+os.environ["FFPROBE_PATH"] = FFPROBE_PATH
+
+# Configure Pydub explicitly
+AudioSegment.converter = FFMPEG_PATH
+AudioSegment.ffprobe = FFPROBE_PATH
+
+# Verify FFmpeg installation
+try:
+    subprocess.run([FFMPEG_PATH, "-version"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    subprocess.run([FFPROBE_PATH, "-version"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+except Exception as e:
+    st.error(f"❌ FFmpeg verification failed: {str(e)}")
+# ================== END FFMPEG FIX ================== #
 
 # Custom CSS styling with animations
 st.markdown("""
@@ -161,11 +180,17 @@ with st.container():
 # Processing function
 def process_audio(input_file, semitones):
     try:
-        # Save uploaded file to temp file
-        with open("temp_audio", "wb") as f:
-            f.write(input_file.getbuffer())
+        # Create temp file with proper extension
+        file_ext = input_file.name.split('.')[-1].lower()
+        if file_ext not in ['mp3', 'wav', 'ogg', 'm4a']:
+            file_ext = 'mp3'
+            
+        with tempfile.NamedTemporaryFile(suffix=f".{file_ext}", delete=False) as tmp_file:
+            tmp_file.write(input_file.getbuffer())
+            tmp_path = tmp_file.name
         
-        audio = AudioSegment.from_file("temp_audio")
+        # Load audio with explicit codec
+        audio = AudioSegment.from_file(tmp_path, format=file_ext)
         audio = audio.set_sample_width(2).set_frame_rate(44100)
         
         samples = np.array(audio.get_array_of_samples(), dtype=np.float32)
@@ -228,8 +253,8 @@ def process_audio(input_file, semitones):
         return None
     finally:
         # Clean up temp file
-        if os.path.exists("temp_audio"):
-            os.remove("temp_audio")
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 # Process button
 if uploaded_file and st.button("🚀 PROCESS AUDIO", use_container_width=True, type="primary"):
