@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 from pydub import AudioSegment
 import librosa.effects
@@ -5,6 +6,11 @@ import numpy as np
 import io
 import plotly.graph_objects as go
 import time
+
+# Set FFmpeg paths explicitly for Streamlit Cloud
+if os.path.exists('/usr/bin/ffmpeg'):
+    AudioSegment.converter = "/usr/bin/ffmpeg"
+    AudioSegment.ffprobe   = "/usr/bin/ffprobe"
 
 # Custom CSS styling with animations
 st.markdown("""
@@ -96,7 +102,7 @@ if 'processed' not in st.session_state:
 if 'processed_audio' not in st.session_state:
     st.session_state.processed_audio = None
 if 'semitones' not in st.session_state:
-    st.session_state.semitones = 0  # Initialize semitones in session state
+    st.session_state.semitones = 0
 
 # Page header
 st.markdown("""
@@ -123,14 +129,9 @@ with st.container():
     with col1:
         with st.container():
             st.markdown("### 🎚️ Pitch Control")
-            # Use session state for semitones value
             semitones = st.slider("Semitones (-24 to +24)", -24, 24, st.session_state.semitones,
                                 help="Precision pitch adjustment in semitones")
-            
-            # Update session state with current slider value
             st.session_state.semitones = semitones
-            
-            # Visual feedback
             st.markdown(f"""
                 <div class="gradient-border">
                     <div style="display: flex; justify-content: space-between; padding: 1rem;">
@@ -149,21 +150,22 @@ with st.container():
             "Major Third": 4,
             "Tritone": 6
         }
-        
         grid = st.columns(2)
         for i, (name, value) in enumerate(presets.items()):
             with grid[i % 2]:
                 if st.button(f"🌟 {name}", key=f"preset_{name}",
                            use_container_width=True, type="secondary"):
-                    # Set session state instead of widget state
                     st.session_state.semitones = value
-                    # Rerun to update the slider
                     st.rerun()
 
-# Processing function with enhanced visualization - FIXED VERSION
+# Processing function
 def process_audio(input_file, semitones):
     try:
-        audio = AudioSegment.from_file(input_file)
+        # Save uploaded file to temp file
+        with open("temp_audio", "wb") as f:
+            f.write(input_file.getbuffer())
+        
+        audio = AudioSegment.from_file("temp_audio")
         audio = audio.set_sample_width(2).set_frame_rate(44100)
         
         samples = np.array(audio.get_array_of_samples(), dtype=np.float32)
@@ -173,7 +175,7 @@ def process_audio(input_file, semitones):
         # Visualization
         y = samples.astype(np.float32) / 32768.0
         if channels == 2:
-            y = y[::2]  # Use first channel for visualization
+            y = y[::2]
 
         fig = go.Figure()
         fig.add_trace(go.Scatter(
@@ -194,7 +196,7 @@ def process_audio(input_file, semitones):
         )
         viz_placeholder.plotly_chart(fig, use_container_width=True)
         
-        # Processing - CORRECTED CHANNEL HANDLING
+        # Processing
         def process_channel(channel_data):
             return librosa.effects.pitch_shift(
                 channel_data.astype(np.float32) / 32768.0,
@@ -202,7 +204,7 @@ def process_audio(input_file, semitones):
                 n_steps=semitones
             ) * 32768.0
         
-        # Handle mono/stereo properly
+        # Handle mono/stereo
         if channels == 1:
             processed_samples = process_channel(samples)
             processed = np.array(processed_samples, dtype=np.int16)
@@ -211,7 +213,6 @@ def process_audio(input_file, semitones):
             right = samples[1::2]
             processed_left = process_channel(left)
             processed_right = process_channel(right)
-            # FIXED: Removed extra parenthesis in np.empty call
             processed = np.empty(len(processed_left) + len(processed_right), dtype=np.int16)
             processed[0::2] = processed_left.astype(np.int16)
             processed[1::2] = processed_right.astype(np.int16)
@@ -225,6 +226,10 @@ def process_audio(input_file, semitones):
     except Exception as e:
         st.error(f"❌ Processing Error: {str(e)}")
         return None
+    finally:
+        # Clean up temp file
+        if os.path.exists("temp_audio"):
+            os.remove("temp_audio")
 
 # Process button
 if uploaded_file and st.button("🚀 PROCESS AUDIO", use_container_width=True, type="primary"):
@@ -247,14 +252,11 @@ if uploaded_file and st.button("🚀 PROCESS AUDIO", use_container_width=True, t
             
             # Create download buffer
             buffer = io.BytesIO()
-            output_format = "mp3"  # Default format
-            file_format = output_format.lower()
-            st.session_state.processed_audio.export(buffer, format=file_format)
+            output_format = "mp3"
+            st.session_state.processed_audio.export(buffer, format=output_format)
             buffer.seek(0)
             st.session_state.output_buffer = buffer
             st.session_state.processing_time = processing_time
-            
-            # Show success animation
             st.balloons()
 
 # Display results
@@ -270,9 +272,8 @@ if st.session_state.processed and st.session_state.processed_audio:
     with st.container():
         col1, col2 = st.columns([2, 3], gap="large")
         with col1:
-            with st.container():
-                st.markdown("#### 🎧 Audio Preview")
-                st.audio(st.session_state.output_buffer, format="audio/mp3")
+            st.markdown("#### 🎧 Audio Preview")
+            st.audio(st.session_state.output_buffer, format="audio/mp3")
         
         with col2:
             st.markdown("#### 📥 Download Options")
@@ -300,7 +301,7 @@ if st.session_state.processed and st.session_state.processed_audio:
                 </div>
             """, unsafe_allow_html=True)
 
-# Sidebar with system info
+# Sidebar
 with st.sidebar:
     st.markdown("""
         <div style="text-align: center; margin-bottom: 2rem;">

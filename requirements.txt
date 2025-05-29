@@ -4,3 +4,4 @@ librosa
 numpy
 plotly
 soundfile
+ffmpeg-python
